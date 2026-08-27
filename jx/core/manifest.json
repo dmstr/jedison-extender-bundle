@@ -1,0 +1,8 @@
+{
+    "_comment": "file generated with AI assistance: Claude Code - 2026-08-27 — Metadata for this extension. THE single source for name, version and the supported Jedison range: index.js deliberately does NOT export them, or they would live in two places and drift. The controller cannot execute JavaScript and therefore reads them from here. A consumer checks `jedison` against its own version BEFORE importing the module — otherwise an incompatibility only shows up as a broken form.",
+    "name": "core",
+    "version": "1.0.0",
+    "jedison": "^1.17",
+    "module": "index.js",
+    "description": "Editors every API can use: type-ahead reference to a collection member (format: iri-reference)."
+}

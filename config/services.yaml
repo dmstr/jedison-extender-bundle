@@ -1,0 +1,19 @@
+# file generated with AI assistance: Claude Code - 2026-08-26
+#
+# Self-contained service wiring, imported by JedisonExtenderBundle::loadExtension().
+# No entry is needed in the consuming application's services.yaml.
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    Dmstr\JedisonExtender\:
+        resource: '../src/'
+        exclude:
+            - '../src/JedisonExtenderBundle.php'
+
+    Dmstr\JedisonExtender\Controller\UiExtensionController:
+        arguments:
+            $paths: '%dmstr_jedison_extender.paths%'
+        tags: ['controller.service_arguments']

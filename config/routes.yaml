@@ -1,0 +1,15 @@
+# file generated with AI assistance: Claude Code - 2026-08-26
+#
+# Imported by the consuming application:
+#
+#     dmstr_jedison_extender:
+#         resource: '@JedisonExtenderBundle/config/routes.yaml'
+#
+# The routes are deliberately NOT under an /api prefix: front ends load the
+# modules with a dynamic import(), which cannot carry an Authorization header,
+# so behind a JWT firewall they would be unreachable. Keep that in mind when
+# adding path-based access rules in the application.
+
+dmstr_jedison_extender_controllers:
+    resource: '../src/Controller/'
+    type: attribute
