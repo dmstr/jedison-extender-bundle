@@ -94,7 +94,7 @@ jx/
 
 | Schema | Editor (`core`) |
 |---|---|
-| `format: iri-reference` + `x-collection` | type-ahead single reference (**requires Awesomplete** as a global; declines to resolve without it, exactly like Jedison's own plugin editors) |
+| `format: iri-reference` + `x-collection` | type-ahead single reference (**requires Awesomplete** as a global; declines to resolve without it, exactly like Jedison's own plugin editors). A stored value is shown by its label: an IRI is fetched as an item, a bare id is tried as `<collection path>/<id>` and else searched through `x-search-property`; until then, and when nothing is found, the raw value is shown. Labels are cached per `x-collection` and value. |
 
 **Editors shaped by one domain do not belong here.** They belong in the application that owns the schemas, as its own extension — a directory with a `manifest.json` under a configured `paths` entry. It appears in the same catalogue, and a front end loading both cannot tell which repository either came from. What the bundle contributes to those editors is `jx/_shared`.
 

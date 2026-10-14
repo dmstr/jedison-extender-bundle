@@ -25,10 +25,19 @@
  * which is usable rather than broken.
  */
 
-import { compileCollectionUrl, resolveInstancePath } from '../_shared/collection-source.js'
+import { compileCollectionUrl, defaultFetchCollection, resolveInstancePath } from '../_shared/collection-source.js'
 
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_SUGGESTIONS = 50
+
+/**
+ * Labels of stored values, shared by every instance: a form re-renders its
+ * editors often, and the same reference shows up in many forms. Keyed by the
+ * `x-collection` template and the value, because a bare id is unique per
+ * collection only. A value without a label is cached as `null`, so a dead
+ * reference costs one lookup, not one per render.
+ */
+const labelCache = new Map()
 
 /** Dot-separated property path, so `x-label-property` may address nested data. */
 function readPath (object, path) {
@@ -88,6 +97,10 @@ export function makeEditorIriReference (Jedison, host) {
       super.init()
 
       this.searchSeq = 0
+      this.labelSeq = 0
+      // The label the input shows instead of the stored value, or null when
+      // it shows the value itself; `blur` must not take it for typed input.
+      this.shownLabel = null
       this.debounceTimer = null
       this.awesomplete = null
       this.watchers = []
@@ -112,6 +125,28 @@ export function makeEditorIriReference (Jedison, host) {
       }
 
       return compileCollectionUrl(Jedison, template, data)
+    }
+
+    /** The collection URL narrowed to members matching $term (`x-search-property`). */
+    searchUrl (term) {
+      const schema = this.instance.schema
+      const searchProperty = schema['x-search-property'] || schema['x-label-property'] || 'name'
+
+      let url = this.collectionUrl()
+      const trimmed = (term || '').trim()
+      if (trimmed) {
+        url += (url.includes('?') ? '&' : '?') +
+          encodeURIComponent(searchProperty) + '=' + encodeURIComponent(trimmed)
+      }
+      return url
+    }
+
+    fetch (url) {
+      return (host.fetchCollection ?? defaultFetchCollection)(url)
+    }
+
+    labelCacheKey (value) {
+      return `${this.instance.schema['x-collection']}\u0000${value}`
     }
 
     build () {
@@ -175,17 +210,10 @@ export function makeEditorIriReference (Jedison, host) {
 
       const seq = ++this.searchSeq
       const schema = this.instance.schema
-      const searchProperty = schema['x-search-property'] || schema['x-label-property'] || 'name'
-
-      let url = this.collectionUrl()
-      const trimmed = (term || '').trim()
-      if (trimmed) {
-        url += (url.includes('?') ? '&' : '?') +
-          encodeURIComponent(searchProperty) + '=' + encodeURIComponent(trimmed)
-      }
+      const url = this.searchUrl(term)
 
       try {
-        const collection = await (host.fetchCollection ?? defaultFetch)(url)
+        const collection = await this.fetch(url)
 
         // Discard a response belonging to an older keystroke, or one that
         // arrived after teardown.
@@ -209,6 +237,9 @@ export function makeEditorIriReference (Jedison, host) {
       this.control.input.addEventListener('awesomplete-selectcomplete', () => {
         const selected = this.control.input.getAttribute('data-selected-value')
         if (selected !== null) {
+          // The input shows the picked label; remember it, or the re-render
+          // that follows setValue() would replace it with the raw value.
+          labelCache.set(this.labelCacheKey(selected), this.control.input.value)
           this.instance.setValue(selected, true, 'user')
         }
       })
@@ -219,6 +250,9 @@ export function makeEditorIriReference (Jedison, host) {
         if (this.instance.schema['x-value-property']) return
 
         const typed = this.control.input.value.trim()
+        // The shown label of the stored value is no input, even when it
+        // contains a slash (model names such as `hf.co/org/model` do).
+        if (this.shownLabel !== null && typed === this.shownLabel) return
         if (typed.includes('/')) {
           this.instance.setValue(typed, true, 'user')
         }
@@ -230,19 +264,87 @@ export function makeEditorIriReference (Jedison, host) {
 
       const value = this.instance.getValue()
       if (value === null || value === undefined || value === '') {
-        this.control.input.value = ''
+        this.labelSeq++
+        this.showValue('', null)
         return
       }
 
-      // With x-value-property the stored value is a bare id, and resolving it
-      // back to a label would need a lookup this editor does not do — showing
-      // the raw value is honest, showing nothing would not be.
-      this.control.input.value = String(value)
+      // The stored value is an IRI or a bare id; the user should see the
+      // member's label instead. Until the lookup answers, and when it finds
+      // nothing, the raw value is shown — honest, where a blank would not be.
+      const stored = String(value)
+      const key = this.labelCacheKey(stored)
+      if (labelCache.has(key)) {
+        this.showValue(stored, labelCache.get(key))
+        return
+      }
+      this.showValue(stored, null)
+      void this.resolveLabel(stored, key)
+    }
+
+    /** Shows $label, or the stored $value itself when there is no label. */
+    showValue (value, label) {
+      this.control.input.value = label ?? value
+      this.shownLabel = label ?? null
+    }
+
+    async resolveLabel (value, key) {
+      const seq = ++this.labelSeq
+      let label = null
+      try {
+        label = await this.lookupLabel(value)
+      } catch (cause) {
+        console.error(`[iri-reference] label lookup for ${value} failed:`, cause)
+        return
+      }
+      labelCache.set(key, label)
+
+      // Drop an answer that is out of date (another value, teardown) or that
+      // would overwrite what the user is typing.
+      if (seq !== this.labelSeq || !this.control) return
+      if (String(this.instance.getValue()) !== value) return
+      if (this.control.input.value !== value) return
+      this.showValue(value, label)
+    }
+
+    /**
+     * The label of the member a stored value refers to, or null. An IRI is
+     * fetched as an item. A bare value is tried as an item of the collection
+     * (`<collection path>/<value>`, the API Platform item route) and else
+     * searched through `x-search-property`, matched against the stored value
+     * or the last segment of `@id` — so it works whether the backend stores
+     * an id or `x-value-property` names another property, provided the
+     * search can find it.
+     */
+    async lookupLabel (value) {
+      const schema = this.instance.schema
+      const labelProperty = schema['x-label-property'] || 'name'
+      const label = (member) => (member && member['@id'] ? extractLabel(member, labelProperty) : null)
+
+      if (value.includes('/')) {
+        return label(await this.fetch(value))
+      }
+
+      const collectionPath = this.collectionUrl().split('?')[0].replace(/\/+$/, '')
+      try {
+        const item = label(await this.fetch(`${collectionPath}/${encodeURIComponent(value)}`))
+        if (item !== null) return item
+      } catch {
+        // Not an item id of this collection; fall through to the search.
+      }
+
+      const collection = await this.fetch(this.searchUrl(value))
+      const member = (collection['hydra:member'] ?? []).find((candidate) =>
+        String(resolveStoredValue(candidate, schema)) === value ||
+        String(candidate['@id'] ?? '').endsWith(`/${value}`),
+      )
+      return label(member)
     }
 
     destroy () {
       if (this.debounceTimer) clearTimeout(this.debounceTimer)
       this.searchSeq++
+      this.labelSeq++
       if (this.awesomplete && typeof this.awesomplete.destroy === 'function') {
         this.awesomplete.destroy()
       }
@@ -251,6 +353,4 @@ export function makeEditorIriReference (Jedison, host) {
   }
 }
 
-function defaultFetch (url) {
-  return fetch(url, { headers: { Accept: 'application/ld+json' } }).then((r) => r.json())
-}
+// - revised 2026-10-09 (label lookup for stored values, label cache, shared fetch)
