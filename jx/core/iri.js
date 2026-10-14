@@ -26,6 +26,7 @@
  */
 
 import { compileCollectionUrl, defaultFetchCollection, resolveInstancePath } from '../_shared/collection-source.js'
+import { resolveLabels } from '../_shared/labels.js'
 
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_SUGGESTIONS = 50
@@ -75,10 +76,14 @@ export function resolveStoredValue (member, schema) {
 
 /**
  * @param {object} Jedison the host's Jedison namespace
- * @param {object} host    host services, notably `fetchCollection(url)`
+ * @param {object} host    host services: `fetchCollection(url)` and, optionally,
+ *                         `resolveLink(iri, schema) -> string|null`, the address
+ *                         at which the host shows the referenced record
+ * @param {object} [options] `labels` overrides, see `../_shared/labels.js`
  */
-export function makeEditorIriReference (Jedison, host) {
+export function makeEditorIriReference (Jedison, host, options = {}) {
   const { EditorString, Utils } = Jedison
+  const labels = resolveLabels(options.labels)
 
   return class EditorIriReference extends EditorString {
     /**
@@ -162,7 +167,66 @@ export function makeEditorIriReference (Jedison, host) {
       this.control.input.setAttribute('data-iri-reference', 'true')
       this.control.input.setAttribute('autocomplete', 'off')
 
+      this.buildLink()
       this.initTypeAhead()
+    }
+
+    /**
+     * A link next to the input that opens the referenced record, where the
+     * host can show it (`host.resolveLink`). It is an anchor with a real
+     * `href`, so it stays usable while the form is disabled — the read-only
+     * view is exactly where it is needed — and a middle click opens a tab.
+     *
+     * Without `host.resolveLink` nothing is added: the bundle knows no front
+     * end routes, only the host does.
+     */
+    buildLink () {
+      this.link = null
+      if (typeof host.resolveLink !== 'function') return
+
+      const input = this.control.input
+      const row = document.createElement('div')
+      row.style.display = 'flex'
+      row.style.alignItems = 'flex-start'
+      row.style.gap = '0.25rem'
+      input.parentNode.insertBefore(row, input)
+      row.appendChild(input)
+      input.style.flex = '1 1 auto'
+      input.style.minWidth = '0'
+
+      // Borrow the theme's button styling, so the link looks like the other
+      // controls of the form whatever theme the host uses.
+      const button = this.theme.getButton({ content: labels.openReference })
+      const link = document.createElement('a')
+      link.className = button.className
+      link.classList.add('jedi-iri-link')
+      link.setAttribute('title', labels.openReference)
+      link.setAttribute('aria-label', labels.openReference)
+      link.textContent = '↗'
+      link.hidden = true
+      row.appendChild(link)
+
+      this.linkRow = row
+      this.link = link
+    }
+
+    /** Points the link at $value, or hides it when the host has no address for it. */
+    refreshLink (value) {
+      if (!this.link) return
+
+      // Only an IRI identifies a record across collections; a bare id
+      // (`x-value-property` naming another property) does not.
+      const href = typeof value === 'string' && value.startsWith('/')
+        ? host.resolveLink(value, this.instance.schema)
+        : null
+
+      if (href) {
+        this.link.setAttribute('href', href)
+        this.link.hidden = false
+      } else {
+        this.link.removeAttribute('href')
+        this.link.hidden = true
+      }
     }
 
     initTypeAhead () {
@@ -183,6 +247,12 @@ export function makeEditorIriReference (Jedison, host) {
             this.input.setAttribute('data-selected-value', suggestion.value)
           },
         })
+        // Awesomplete wraps the input in its own container; in the row next
+        // to the link that container has to take the width the input had.
+        if (this.linkRow && input.parentNode !== this.linkRow) {
+          input.parentNode.style.flex = '1 1 auto'
+          input.parentNode.style.minWidth = '0'
+        }
       }
 
       // Fetch on focus, so there is something to look at before typing.
@@ -263,6 +333,7 @@ export function makeEditorIriReference (Jedison, host) {
       this.refreshDisabledState()
 
       const value = this.instance.getValue()
+      this.refreshLink(value)
       if (value === null || value === undefined || value === '') {
         this.labelSeq++
         this.showValue('', null)
@@ -354,3 +425,4 @@ export function makeEditorIriReference (Jedison, host) {
 }
 
 // - revised 2026-10-09 (label lookup for stored values, label cache, shared fetch)
+// - revised 2026-10-14 (link to the referenced record through host.resolveLink)

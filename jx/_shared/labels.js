@@ -27,6 +27,9 @@
  */
 
 export const defaultLabels = {
+  /** `title` and `aria-label` of the link that opens a referenced record. */
+  openReference: 'Open referenced record',
+
   /** Shown by the single select and in the pill row while nothing is chosen. */
   placeholder: '— please choose —',
 

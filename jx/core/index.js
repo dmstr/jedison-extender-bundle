@@ -13,6 +13,12 @@
  * class than the one the host's `ui-resolver` checks against, and none of these
  * editors would ever resolve.
  *
+ * `host.resolveLink(iri, schema) -> string|null` (optional) is the address at
+ * which the host shows the record an IRI refers to — a route, a URL. The
+ * reference editor puts a link to it next to its input, in edit and read-only
+ * mode alike. Only the host knows its routes; without the function, or when it
+ * returns null, no link is shown.
+ *
  * `host.fetchCollection(url) -> Promise<hydra document>` is the host's
  * AUTHENTICATED client. The editors read protected collections, which answer
  * 401 without a bearer token — each front end hangs that token into its own
@@ -48,7 +54,7 @@ import { makeEditorIriReference } from './iri.js'
 
 /**
  * @param {object} Jedison the host's Jedison namespace (its default export)
- * @param {{fetchCollection?: (url: string) => Promise<object>}} [host]
+ * @param {{fetchCollection?: (url: string) => Promise<object>, resolveLink?: (iri: string, schema: object) => string|null}} [host]
  * @param {{labels?: Record<string, unknown>}} [options]
  * @returns {{editors: Function[], constraints: Record<string, Function>}}
  */
@@ -62,9 +68,9 @@ export default function register (Jedison, host = {}, options = {}) {
 
   return {
     editors: [
-      // No labels: this editor renders no text of its own — the type-ahead
-      // comes from Awesomplete and its entries are collection members.
-      makeEditorIriReference(Jedison, host),
+      // Its only own text is the title of the link to the referenced record;
+      // the type-ahead entries are collection members.
+      makeEditorIriReference(Jedison, host, options),
     ],
     // No custom constraints yet. `x-validator-*` keywords belong here, as a map
     // keyed by the keyword — see the note above.

@@ -40,6 +40,7 @@ for (const entry of catalogue.extensions) {
 
 - **`Jedison` must be the host's instance.** A module importing the library itself would extend a *second* copy and get a different `Editor` base class than the one the host's `ui-resolver` checks against — none of its editors would ever resolve.
 - **`host.fetchCollection(url)`** is the host's *authenticated* HTTP client. Editors read protected collections, which answer 401 without a token, and only the host has one. Omitting it falls back to a plain `fetch()` — enough for public collections and nothing else.
+- **`host.resolveLink(iri, schema)`** (optional) returns the address at which the host shows the record an IRI refers to, or `null`. The reference editor links to it next to its input, in edit and read-only mode alike. The bundle knows no front end routes; without the function no link is shown.
 - **`constraints` is a map `{keyword: fn}`, not an array.** Jedison's own default spells it `[]`, but its validator spreads the value into an object, so an array registers nothing at all, silently ([jedison#69](https://github.com/germanbisurgi/jedison/issues/69), point 3).
 - **Order matters in `customEditors`** — the array is scanned in order, first match wins. Put narrower editors before broader ones.
 
@@ -94,7 +95,7 @@ jx/
 
 | Schema | Editor (`core`) |
 |---|---|
-| `format: iri-reference` + `x-collection` | type-ahead single reference (**requires Awesomplete** as a global; declines to resolve without it, exactly like Jedison's own plugin editors). A stored value is shown by its label: an IRI is fetched as an item, a bare id is tried as `<collection path>/<id>` and else searched through `x-search-property`; until then, and when nothing is found, the raw value is shown. Labels are cached per `x-collection` and value. |
+| `format: iri-reference` + `x-collection` | type-ahead single reference (**requires Awesomplete** as a global; declines to resolve without it, exactly like Jedison's own plugin editors). A stored value is shown by its label: an IRI is fetched as an item, a bare id is tried as `<collection path>/<id>` and else searched through `x-search-property`; until then, and when nothing is found, the raw value is shown. Labels are cached per `x-collection` and value. When the host passes `resolveLink(iri, schema)`, a link to the referenced record sits next to the input, also in a disabled form. |
 
 **Editors shaped by one domain do not belong here.** They belong in the application that owns the schemas, as its own extension — a directory with a `manifest.json` under a configured `paths` entry. It appears in the same catalogue, and a front end loading both cannot tell which repository either came from. What the bundle contributes to those editors is `jx/_shared`.
 
