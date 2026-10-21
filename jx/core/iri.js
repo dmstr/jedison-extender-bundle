@@ -106,6 +106,16 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
       // The label the input shows instead of the stored value, or null when
       // it shows the value itself; `blur` must not take it for typed input.
       this.shownLabel = null
+      // True from the first keystroke until the input shows a stored value
+      // again: only then is its text a search term.
+      this.typing = false
+      // True while the user asked for the list (focus, click, typing). A
+      // search answer opens it only then, so a pick or a clear is not undone
+      // by a late answer.
+      this.wantsList = false
+      // Set by a pick: Jedison re-renders the field after setValue() and puts
+      // the focus back on the input, which is no request for the list.
+      this.refocusExpected = false
       this.debounceTimer = null
       this.awesomplete = null
       this.watchers = []
@@ -167,23 +177,21 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
       this.control.input.setAttribute('data-iri-reference', 'true')
       this.control.input.setAttribute('autocomplete', 'off')
 
-      this.buildLink()
+      this.buildButtons()
       this.initTypeAhead()
     }
 
     /**
-     * A link next to the input that opens the referenced record, where the
-     * host can show it (`host.resolveLink`). It is an anchor with a real
-     * `href`, so it stays usable while the form is disabled — the read-only
-     * view is exactly where it is needed — and a middle click opens a tab.
+     * Puts a row of buttons next to the input: one that clears the value and,
+     * where the host can show the referenced record (`host.resolveLink`), a
+     * link to it. The link is an anchor with a real `href`, so it stays usable
+     * while the form is disabled — the read-only view is exactly where it is
+     * needed — and a middle click opens a tab.
      *
-     * Without `host.resolveLink` nothing is added: the bundle knows no front
+     * Without `host.resolveLink` no link is added: the bundle knows no front
      * end routes, only the host does.
      */
-    buildLink () {
-      this.link = null
-      if (typeof host.resolveLink !== 'function') return
-
+    buildButtons () {
       const input = this.control.input
       const row = document.createElement('div')
       row.style.display = 'flex'
@@ -193,21 +201,54 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
       row.appendChild(input)
       input.style.flex = '1 1 auto'
       input.style.minWidth = '0'
+      this.row = row
 
-      // Borrow the theme's button styling, so the link looks like the other
+      // Borrow the theme's button styling, so the buttons look like the other
       // controls of the form whatever theme the host uses.
-      const button = this.theme.getButton({ content: labels.openReference })
+      const themed = this.theme.getButton({ content: labels.clear })
+
+      // As tall as the input in any theme. No `display` here: an inline one
+      // would beat the `hidden` attribute that hides a button. Colours stay
+      // with the theme and the host's own CSS.
+      const fit = (button) => { button.style.alignSelf = 'stretch' }
+
+      const clear = document.createElement('button')
+      clear.type = 'button'
+      clear.className = themed.className
+      clear.classList.add('jedi-iri-clear')
+      clear.setAttribute('title', labels.clear)
+      clear.setAttribute('aria-label', labels.clear)
+      clear.textContent = '×'
+      clear.hidden = true
+      fit(clear)
+      clear.addEventListener('click', () => {
+        this.dismissList()
+        // The same value as emptying a plain string input gives.
+        this.instance.setValue('', true, 'user')
+      })
+      row.appendChild(clear)
+      this.clearButton = clear
+
+      this.link = null
+      if (typeof host.resolveLink !== 'function') return
+
       const link = document.createElement('a')
-      link.className = button.className
+      link.className = themed.className
       link.classList.add('jedi-iri-link')
       link.setAttribute('title', labels.openReference)
       link.setAttribute('aria-label', labels.openReference)
       link.textContent = '↗'
       link.hidden = true
+      fit(link)
       row.appendChild(link)
-
-      this.linkRow = row
       this.link = link
+    }
+
+    /** The clear button shows while there is a value to clear and the field is editable. */
+    refreshClear (value) {
+      if (!this.clearButton) return
+      const empty = value === null || value === undefined || value === ''
+      this.clearButton.hidden = empty || this.control.input.disabled
     }
 
     /** Points the link at $value, or hides it when the host has no address for it. */
@@ -242,32 +283,69 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
           // The server already filtered; filtering again client-side collapses
           // the dropdown while the user is still typing.
           filter: () => true,
+          // The stored value is the tooltip of an option, as it is of the
+          // shown label.
+          item (suggestion, term, index) {
+            const item = globalThis.Awesomplete.ITEM(suggestion, term, index)
+            item.setAttribute('title', String(suggestion.value))
+            return item
+          },
           replace (suggestion) {
             this.input.value = suggestion.label
             this.input.setAttribute('data-selected-value', suggestion.value)
           },
         })
         // Awesomplete wraps the input in its own container; in the row next
-        // to the link that container has to take the width the input had.
-        if (this.linkRow && input.parentNode !== this.linkRow) {
+        // to the buttons that container has to take the width the input had.
+        if (input.parentNode !== this.row) {
           input.parentNode.style.flex = '1 1 auto'
           input.parentNode.style.minWidth = '0'
         }
       }
 
-      // Fetch on focus, so there is something to look at before typing.
-      input.addEventListener('focus', () => {
+      // Fetch on focus, so there is something to look at before typing. While
+      // the input shows a stored value its text is no search term: listing
+      // only the member it already shows would hide the other options. The
+      // text is selected, so typing replaces it.
+      const open = () => {
         ensure()
-        this.scheduleSearch(input.value)
+        this.wantsList = true
+        if (!this.typing && input.value !== '') input.select()
+        this.scheduleSearch(this.typing ? input.value : '')
+      }
+      input.addEventListener('focus', () => {
+        if (this.refocusExpected) {
+          this.refocusExpected = false
+          return
+        }
+        open()
+      })
+      // The user is acting on the input: what follows is no refocus by Jedison.
+      for (const type of ['pointerdown', 'keydown']) {
+        input.addEventListener(type, () => { this.refocusExpected = false })
+      }
+      // A click on a field that already has focus does not focus it again.
+      input.addEventListener('click', () => {
+        if (!this.awesomplete?.isOpened) open()
       })
 
       input.addEventListener('input', () => {
         ensure()
+        this.wantsList = true
+        this.typing = true
         // Typing invalidates a previous pick — drop it, or `blur` would write
         // the stale value back.
         input.removeAttribute('data-selected-value')
         this.scheduleSearch(input.value)
       })
+    }
+
+    /** Closes the list and drops every search that could reopen it. */
+    dismissList () {
+      this.wantsList = false
+      if (this.debounceTimer) clearTimeout(this.debounceTimer)
+      this.searchSeq++
+      this.awesomplete?.close()
     }
 
     scheduleSearch (term) {
@@ -295,7 +373,11 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
         }))
         this.awesomplete.evaluate()
 
-        if (document.activeElement === this.control.input) {
+        // Assigning the list can open it by itself; without a request for the
+        // list from the user it must stay shut.
+        if (!this.wantsList) {
+          this.awesomplete.close()
+        } else if (document.activeElement === this.control.input) {
           this.awesomplete.open()
         }
       } catch (cause) {
@@ -307,6 +389,10 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
       this.control.input.addEventListener('awesomplete-selectcomplete', () => {
         const selected = this.control.input.getAttribute('data-selected-value')
         if (selected !== null) {
+          // A search still pending or in flight (focus and click each start
+          // one) would reopen the list after the pick: cancel it.
+          this.dismissList()
+          this.refocusExpected = true
           // The input shows the picked label; remember it, or the re-render
           // that follows setValue() would replace it with the raw value.
           labelCache.set(this.labelCacheKey(selected), this.control.input.value)
@@ -315,17 +401,21 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
       })
 
       this.control.input.addEventListener('blur', () => {
-        // Only accept free-typed input when the field stores IRIs; with
-        // `x-value-property` an arbitrary string is meaningless.
-        if (this.instance.schema['x-value-property']) return
-
+        this.wantsList = false
         const typed = this.control.input.value.trim()
         // The shown label of the stored value is no input, even when it
         // contains a slash (model names such as `hf.co/org/model` do).
         if (this.shownLabel !== null && typed === this.shownLabel) return
-        if (typed.includes('/')) {
+
+        // Only accept free-typed input when the field stores IRIs; with
+        // `x-value-property` an arbitrary string is meaningless.
+        if (!this.instance.schema['x-value-property'] && typed.includes('/')) {
           this.instance.setValue(typed, true, 'user')
+          return
         }
+
+        // Any other text is a search that led nowhere: show what is stored.
+        if (this.typing) this.refreshUI()
       })
     }
 
@@ -334,6 +424,7 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
 
       const value = this.instance.getValue()
       this.refreshLink(value)
+      this.refreshClear(value)
       if (value === null || value === undefined || value === '') {
         this.labelSeq++
         this.showValue('', null)
@@ -353,10 +444,16 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
       void this.resolveLabel(stored, key)
     }
 
-    /** Shows $label, or the stored $value itself when there is no label. */
+    /**
+     * Shows $label, or the stored $value itself when there is no label. The
+     * stored value is the tooltip of a label, so the machine value stays one
+     * hover away.
+     */
     showValue (value, label) {
       this.control.input.value = label ?? value
+      this.control.input.title = label !== null && label !== undefined ? value : ''
       this.shownLabel = label ?? null
+      this.typing = false
     }
 
     async resolveLabel (value, key) {
@@ -426,3 +523,4 @@ export function makeEditorIriReference (Jedison, host, options = {}) {
 
 // - revised 2026-10-09 (label lookup for stored values, label cache, shared fetch)
 // - revised 2026-10-14 (link to the referenced record through host.resolveLink)
+// - revised 2026-10-21 (clear button, all options on focus, stored value as tooltip)

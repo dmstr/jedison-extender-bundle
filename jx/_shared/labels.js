@@ -27,6 +27,9 @@
  */
 
 export const defaultLabels = {
+  /** `title` and `aria-label` of the button that empties a reference. */
+  clear: 'Clear selection',
+
   /** `title` and `aria-label` of the link that opens a referenced record. */
   openReference: 'Open referenced record',
 
