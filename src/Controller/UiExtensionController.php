@@ -83,6 +83,12 @@ final class UiExtensionController
         foreach ($this->locator->manifests($this->paths) as $name => $manifest) {
             $module = \is_string($manifest['module'] ?? null) ? $manifest['module'] : 'index.js';
 
+            // Only a library with configured locales gets a query, so the module
+            // can register them; every other entry stays byte-identical.
+            if ([] !== ($this->libraryLocales[$name] ?? [])) {
+                $module .= '?locales='.implode(',', array_map('rawurlencode', $this->libraryLocales[$name]));
+            }
+
             $extensions[] = [
                 'name' => $name,
                 'version' => $manifest['version'] ?? null,
