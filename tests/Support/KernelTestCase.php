@@ -25,10 +25,11 @@ abstract class KernelTestCase extends TestCase
     /**
      * @param list<string> $editors
      * @param list<string> $paths
+     * @param array<string, list<string>> $locales
      */
-    protected static function kernel(array $editors = [], array $paths = [], ?string $bundleFixture = null): TestKernel
+    protected static function kernel(array $editors = [], array $paths = [], ?string $bundleFixture = null, array $locales = []): TestKernel
     {
-        $kernel = new TestKernel($editors, $paths, $bundleFixture);
+        $kernel = new TestKernel($editors, $paths, $bundleFixture, $locales);
         $kernel->boot();
 
         return $kernel;
@@ -45,10 +46,15 @@ abstract class KernelTestCase extends TestCase
         return new KernelBrowser(self::kernel($editors, $paths, self::BUNDLE_FIXTURE));
     }
 
-    /** A client against the real bundle directory, no configuration. */
-    protected static function realClient(): KernelBrowser
+    /**
+     * A client against the real bundle directory.
+     *
+     * @param list<string> $editors
+     * @param array<string, list<string>> $locales
+     */
+    protected static function realClient(array $editors = [], array $locales = []): KernelBrowser
     {
-        return new KernelBrowser(self::kernel());
+        return new KernelBrowser(self::kernel($editors, [], null, $locales));
     }
 
     /** @return array<string, mixed> decoded catalogue */

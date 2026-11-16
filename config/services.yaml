@@ -21,4 +21,5 @@ services:
     Dmstr\JedisonExtender\Controller\UiExtensionController:
         arguments:
             $paths: '%dmstr_jedison_extender.paths%'
+            $libraryLocales: '%dmstr_jedison_extender.library_locales%'
         tags: ['controller.service_arguments']

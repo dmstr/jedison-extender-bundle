@@ -35,11 +35,13 @@ final class TestKernel extends Kernel implements CompilerPassInterface
      * @param list<string> $paths          value of `paths`
      * @param string|null  $bundleFixture  a directory standing in for the
      *                                     bundle's own `jx/`; null keeps the real one
+     * @param array<string, list<string>> $locales value of `core.locales`
      */
     public function __construct(
         private readonly array $editors = [],
         private readonly array $paths = [],
         private readonly ?string $bundleFixture = null,
+        private readonly array $locales = [],
     ) {
         parent::__construct('test', false);
     }
@@ -81,7 +83,7 @@ final class TestKernel extends Kernel implements CompilerPassInterface
         ]);
         $container->extension('dmstr_jedison_extender', [
             'paths' => $this->paths,
-            'core' => ['editors' => $this->editors],
+            'core' => ['editors' => $this->editors, 'locales' => $this->locales],
         ]);
     }
 
@@ -115,6 +117,6 @@ final class TestKernel extends Kernel implements CompilerPassInterface
 
     private function fingerprint(): string
     {
-        return md5(serialize([$this->editors, $this->paths, $this->bundleFixture]));
+        return md5(serialize([$this->editors, $this->paths, $this->bundleFixture, $this->locales]));
     }
 }

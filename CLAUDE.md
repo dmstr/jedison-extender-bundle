@@ -30,6 +30,8 @@ A consuming application can pin the rule cheaply by asserting that the served mo
 
 The list of switchable libraries lives in `Library::ALL` and nowhere else; configuration validation, the locator and the tests all read it. Vendored third-party code is written **only** by `bin/fetch-libraries` (recipes in `bin/libraries/`, version pinned with its npm integrity value) and never edited by hand. Third-party code always sits in a `vendor/` subdirectory of its extension, which is what keeps it out of the guard tests. A library's `index.js` never alters a global the host provided.
 
+Locales (`core.locales`) are validated against the files of `jx/<lib>/vendor/l10n/` at container build. A file that does not register under its own name is rejected by name, so a new flatpickr version needs that list re-checked (see README, "Notes per library"). Only the catalogue entry carries the locales, as one query parameter; delivery ignores the query, so ETags do not change. Do not add a second parameter without a reason: the module parses exactly this one.
+
 ## Versioning
 
 The version comes from the **git tag**, never from `composer.json` — there is no `version` field and none may be added. Tags are plain SemVer **without a `v` prefix** (`0.1.0`, not `v0.1.0`).
@@ -50,6 +52,8 @@ Layout under `tests/`: `Support/TestKernel.php` is the smallest application that
 Guard tests, which discover what they check instead of listing it so a new module is covered the day it is added: the shipped modules are English only (no non-ASCII letters, no German transliterations) and name no consumer. They glob `jx/*/*.js` and `jx/_shared/*.js` — the modules this repository owns — and leave `vendor/` out by construction, because third-party code is not ours to police.
 
 `Bundle/LibraryExtensionTest.php` runs over the REAL `jx/` directory for every entry of `Library::ALL`: listing and manifest, every relative URL in an `index.js` resolves through the file route with the right content type, every servable file in `vendor/` is served, a disabled library is invisible, and the directories match the list. Use fixtures only for what the real directory cannot show.
+
+Locale tests: `Bundle/ConfigurationTest.php` (every rejection and normalisation rule), `Controller/LocaleCatalogueTest.php` (catalogue, delivery, ETag, and a counter-check that a changed configuration does not reuse a stale kernel cache) and `Bundle/FlatpickrLocaleModuleTest.php` (source patterns of the module, since there is no browser). `TestKernel` takes the locales as 4th argument and `KernelTestCase::kernel(..., array $locales = [])` / `realClient(array $editors = [], array $locales = [])` pass them on. The locales must be part of the kernel's fingerprint (its cache directory): otherwise two tests with different locales share one compiled container and the second silently runs against the first one's configuration.
 
 **Every new behaviour ships with a test**, and a fix with a test that fails without it.
 

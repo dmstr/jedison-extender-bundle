@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace Dmstr\JedisonExtender;
 
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
@@ -58,11 +59,16 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
  *             - '%kernel.project_dir%/jx'
  *         core:
  *             editors: [flatpickr, imask]
+ *             locales:
+ *                 flatpickr: [de]
  *
  * `core.editors` switches on the third-party libraries the Jedison plugin
  * editors need (see `Library::ALL`). Each is its own extension under `jx/` and
  * only the enabled ones are listed in the catalogue or served; Awesomplete
- * belongs to `core` itself and is always on.
+ * belongs to `core` itself and is always on. `core.locales` lists, per enabled
+ * library that ships translations (today flatpickr), the locales its module
+ * loads; they travel in the catalogue's `module` URL as `?locales=de,fr`, and
+ * invalid ones fail when the container is built.
  */
 final class JedisonExtenderBundle extends AbstractBundle
 {
@@ -93,9 +99,69 @@ final class JedisonExtenderBundle extends AbstractBundle
                                 ->end()
                             ->end()
                         ->end()
+                        ->arrayNode('locales')
+                            ->info('Locale files to load per enabled library, e.g. `flatpickr: [de]`. Only libraries shipping `vendor/l10n/` qualify.')
+                            ->useAttributeAsKey('library')
+                            ->normalizeKeys(false)
+                            ->arrayPrototype()
+                                ->scalarPrototype()->end()
+                            ->end()
+                            ->defaultValue([])
+                        ->end()
+                    ->end()
+                    ->validate()
+                        ->always(static function (array $core): array {
+                            self::validateLocales($core['editors'] ?? [], $core['locales'] ?? []);
+
+                            return $core;
+                        })
                     ->end()
                 ->end()
             ->end();
+    }
+
+    /**
+     * Rejects locales that would fail at runtime: unknown or not enabled
+     * libraries, names that are no locale file, and files that register their
+     * translation under another name than their own (flatpickr's `ms.js`
+     * registers nothing, `ga.js` registers `hr`), which the library could
+     * never find.
+     *
+     * @param list<string>                $editors
+     * @param array<string, list<mixed>> $locales
+     */
+    private static function validateLocales(array $editors, array $locales): void
+    {
+        foreach ($locales as $library => $names) {
+            $library = (string) $library;
+            if (!\in_array($library, Library::ALL, true)) {
+                throw new InvalidConfigurationException(\sprintf('Invalid "core.locales": unknown library "%s". Available: %s.', $library, implode(', ', Library::ALL)));
+            }
+            $directory = \dirname(__DIR__).'/jx/'.$library.'/vendor/l10n';
+            if (!is_dir($directory)) {
+                throw new InvalidConfigurationException(\sprintf('Invalid "core.locales": library "%s" ships no locale files (no vendor/l10n/ directory).', $library));
+            }
+            if ([] !== $names && !\in_array($library, $editors, true)) {
+                throw new InvalidConfigurationException(\sprintf('Invalid "core.locales": locales are configured for library "%s", which is not enabled in "core.editors".', $library));
+            }
+            foreach ($names as $locale) {
+                if (!\is_string($locale) || 1 !== preg_match('/^[a-z][a-z0-9_-]*$/', $locale)) {
+                    throw new InvalidConfigurationException(\sprintf('Invalid "core.locales.%s": %s is not a locale name (lowercase letters, digits, "-" and "_", starting with a letter).', $library, json_encode($locale, \JSON_UNESCAPED_SLASHES)));
+                }
+                if (\in_array($locale, ['index', 'default'], true)) {
+                    throw new InvalidConfigurationException(\sprintf('Invalid "core.locales.%s": "%s" is not a locale (it is a collection file or the English default, which registers nothing).', $library, $locale));
+                }
+                $file = $directory.'/'.$locale.'.js';
+                if (!is_file($file)) {
+                    throw new InvalidConfigurationException(\sprintf('Invalid "core.locales.%s": unknown locale "%s", there is no vendor/l10n/%s.js.', $library, $locale, $locale));
+                }
+                $quoted = preg_quote($locale, '/');
+                $registers = '/\bfp\.l10ns(?:\.'.$quoted.'|\[\s*["\']'.$quoted.'["\']\s*\])\s*=(?!=)/';
+                if (1 !== preg_match($registers, (string) file_get_contents($file))) {
+                    throw new InvalidConfigurationException(\sprintf('Invalid "core.locales.%s": locale file "%s.js" does not register under its own name "%s", so the library could not find it.', $library, $locale, $locale));
+                }
+            }
+        }
     }
 
     public function loadExtension(
@@ -117,6 +183,13 @@ final class JedisonExtenderBundle extends AbstractBundle
             'dmstr_jedison_extender.enabled_libraries',
             array_values(array_unique($config['core']['editors'] ?? [])),
         );
+        $locales = [];
+        foreach ($config['core']['locales'] ?? [] as $library => $names) {
+            if ([] !== $names) {
+                $locales[(string) $library] = array_values(array_unique($names));
+            }
+        }
+        $builder->setParameter('dmstr_jedison_extender.library_locales', $locales);
         $container->import(\dirname(__DIR__).'/config/services.yaml');
     }
 }

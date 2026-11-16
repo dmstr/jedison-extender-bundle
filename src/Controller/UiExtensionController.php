@@ -59,10 +59,14 @@ final class UiExtensionController
      */
     private const FILE_PATTERN = '[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*';
 
-    /** @param list<string> $paths */
+    /**
+     * @param list<string>                $paths
+     * @param array<string, list<string>> $libraryLocales
+     */
     public function __construct(
         private readonly ExtensionLocator $locator,
         private readonly array $paths,
+        private readonly array $libraryLocales = [],
     ) {
     }
 
@@ -78,6 +82,12 @@ final class UiExtensionController
 
         foreach ($this->locator->manifests($this->paths) as $name => $manifest) {
             $module = \is_string($manifest['module'] ?? null) ? $manifest['module'] : 'index.js';
+
+            // Only a library with configured locales gets a query, so the module
+            // can register them; every other entry stays byte-identical.
+            if ([] !== ($this->libraryLocales[$name] ?? [])) {
+                $module .= '?locales='.implode(',', array_map('rawurlencode', $this->libraryLocales[$name]));
+            }
 
             $extensions[] = [
                 'name' => $name,
