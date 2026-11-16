@@ -50,7 +50,17 @@
  * exported here, so there is exactly one source for it.
  */
 
+import { ensureGlobal } from '../_shared/load-library.js'
 import { makeEditorIriReference } from './iri.js'
+
+// Awesomplete is part of core and always on: the reference editor declines
+// without it. The top-level await keeps the global in place before register()
+// can be called, because the host's import() resolves only after it.
+await ensureGlobal(
+  'Awesomplete',
+  new URL('./vendor/awesomplete.min.js', import.meta.url),
+  [new URL('./vendor/awesomplete.css', import.meta.url)]
+)
 
 /**
  * @param {object} Jedison the host's Jedison namespace (its default export)

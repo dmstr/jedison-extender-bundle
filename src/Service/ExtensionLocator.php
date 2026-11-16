@@ -5,6 +5,8 @@ declare(strict_types=1);
 
 namespace Dmstr\JedisonExtender\Service;
 
+use Dmstr\JedisonExtender\Library;
+
 /**
  * Finds extensions across the configured directories.
  *
@@ -16,10 +18,35 @@ namespace Dmstr\JedisonExtender\Service;
  * directory comes first, an application cannot accidentally shadow a shipped
  * extension by picking the same name — it would have to be a deliberate change
  * to the configured order.
+ *
+ * ONE FILTER: in the bundle's own directory a library extension (a name from
+ * `Library::ALL`) that is not enabled is skipped everywhere, as if it did not
+ * exist. That includes the name-clash rule: with the bundle's `ace` disabled, an
+ * application's own `ace` from a later path is found. Nothing else is filtered —
+ * `core`, `_shared` and every extension from an application path stay as they are.
  */
 final class ExtensionLocator
 {
     private const MANIFEST = 'manifest.json';
+
+    private readonly string $bundleDirectory;
+
+    /**
+     * Both parameters are optional so a consuming application can build the
+     * locator by hand (`new ExtensionLocator()`): no library is enabled then.
+     *
+     * @param list<string> $enabledLibraries names from `Library::ALL`
+     * @param string|null  $bundleDirectory  the directory the filter applies
+     *                                       to; defaults to this bundle's `jx/`,
+     *                                       injectable so tests can use fixtures
+     */
+    public function __construct(
+        private readonly array $enabledLibraries = [],
+        ?string $bundleDirectory = null,
+    ) {
+        $directory = $bundleDirectory ?? \dirname(__DIR__, 2).'/jx';
+        $this->bundleDirectory = false !== realpath($directory) ? realpath($directory) : $directory;
+    }
 
     /**
      * Every extension holding a readable manifest, keyed by name.
@@ -38,6 +65,10 @@ final class ExtensionLocator
         foreach ($paths as $base) {
             foreach (glob(rtrim($base, '/').'/*/'.self::MANIFEST) ?: [] as $file) {
                 $name = basename(\dirname($file));
+
+                if ($this->isDisabled($base, $name)) {
+                    continue;
+                }
 
                 if (isset($manifests[$name])) {
                     continue; // first path wins
@@ -69,7 +100,13 @@ final class ExtensionLocator
     public function resolve(array $paths, string $name, string $file): ?string
     {
         foreach ($paths as $base) {
-            $root = realpath($base);
+            if ($this->isDisabled($base, $name)) {
+                continue;
+            }
+
+            // The extension directory, not the search path, is the boundary: a
+            // file may not reach into a sibling extension either.
+            $root = realpath(rtrim($base, '/').'/'.$name);
             $path = realpath(rtrim($base, '/').'/'.$name.'/'.$file);
 
             if (false === $root || false === $path || !is_file($path)) {
@@ -82,5 +119,17 @@ final class ExtensionLocator
         }
 
         return null;
+    }
+
+    /**
+     * Whether $name in $base is a library extension that was not switched on.
+     * Compared by realpath, so a symlinked or differently spelled path to the
+     * bundle directory is still recognised.
+     */
+    private function isDisabled(string $base, string $name): bool
+    {
+        return \in_array($name, Library::ALL, true)
+            && !\in_array($name, $this->enabledLibraries, true)
+            && realpath($base) === $this->bundleDirectory;
     }
 }

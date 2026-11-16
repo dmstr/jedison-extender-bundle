@@ -1,0 +1,9 @@
+{
+    "_comment": "file generated with AI assistance: Claude Code - 2026-11-16 16:03:25 UTC — Metadata for this extension; see jx/core/manifest.json for why it lives here and not in index.js.",
+    "name": "quill",
+    "version": "1.0.0",
+    "jedison": "^1.22.1",
+    "module": "index.js",
+    "description": "Enables the Jedison rich-text editor for strings (x-format quill) by providing Quill with the snow theme.",
+    "libraries": [{"name": "quill", "version": "2.0.3", "license": "BSD-3-Clause"}]
+}

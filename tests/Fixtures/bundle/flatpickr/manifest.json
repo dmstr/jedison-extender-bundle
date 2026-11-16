@@ -1,0 +1,8 @@
+{
+    "_comment": "file generated with AI assistance: Claude Code - 2026-11-16 16:10:00 UTC",
+    "name": "flatpickr",
+    "version": "1.0.0",
+    "jedison": "^1.22.1",
+    "module": "index.js",
+    "description": "Fixture extension flatpickr."
+}

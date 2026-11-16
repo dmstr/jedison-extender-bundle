@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# file generated with AI assistance: Claude Code - 2026-11-16 15:54:43 UTC
+#
+# Maintainer tool: refreshes the vendored browser libraries from npm.
+#
+# Usage: bin/fetch-libraries [<lib>...]    (no arguments = every recipe)
+#
+# A recipe bin/libraries/<lib>.sh sets PACKAGE, VERSION, INTEGRITY (the npm
+# dist.integrity value), TARGET (relative to the repository root) and defines
+# install_files, which copies from $PKG (the unpacked package/ directory) into
+# $TARGET. The tarball is verified against INTEGRITY before anything is
+# touched, so a swapped package on the registry fails hard.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RECIPES="$ROOT/bin/libraries"
+
+if [ "$#" -eq 0 ]; then
+    set -- $(cd "$RECIPES" && ls ./*.sh | sed 's|^\./||; s|\.sh$||')
+fi
+
+fetch_one() {
+    local lib="$1" recipe="$RECIPES/$1.sh" tmp tarball actual
+
+    [ -f "$recipe" ] || { echo "No recipe for $lib" >&2; return 1; }
+
+    unset PACKAGE VERSION INTEGRITY TARGET
+    unset -f install_files
+    # shellcheck disable=SC1090
+    . "$recipe"
+
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' RETURN
+
+    (cd "$tmp" && npm pack --silent "$PACKAGE@$VERSION" >/dev/null)
+    tarball="$(ls "$tmp"/*.tgz)"
+
+    actual="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
+    if [ "$actual" != "$INTEGRITY" ]; then
+        echo "Integrity mismatch for $PACKAGE@$VERSION" >&2
+        echo "  expected: $INTEGRITY" >&2
+        echo "  actual:   $actual" >&2
+        return 1
+    fi
+
+    tar -xzf "$tarball" -C "$tmp"
+    PKG="$tmp/package"
+
+    rm -rf "${ROOT:?}/$TARGET"
+    mkdir -p "$ROOT/$TARGET"
+    TARGET="$ROOT/$TARGET"
+    install_files
+    echo "$lib: $PACKAGE@$VERSION -> ${TARGET#"$ROOT"/}"
+}
+
+for lib in "$@"; do
+    fetch_one "$lib"
+done

@@ -1,0 +1,9 @@
+{
+    "_comment": "file generated with AI assistance: Claude Code - 2026-11-16 16:03:25 UTC — Metadata for this extension; see jx/core/manifest.json for why it lives here and not in index.js.",
+    "name": "tom-select",
+    "version": "1.0.0",
+    "jedison": "^1.22.1",
+    "module": "index.js",
+    "description": "Enables the Jedison multi-select editor for arrays (x-format tom-select) by providing Tom Select.",
+    "libraries": [{"name": "tom-select", "version": "2.7.0", "license": "Apache-2.0"}]
+}

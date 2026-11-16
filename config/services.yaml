@@ -12,6 +12,11 @@ services:
         resource: '../src/'
         exclude:
             - '../src/JedisonExtenderBundle.php'
+            - '../src/Library.php'
+
+    Dmstr\JedisonExtender\Service\ExtensionLocator:
+        arguments:
+            $enabledLibraries: '%dmstr_jedison_extender.enabled_libraries%'
 
     Dmstr\JedisonExtender\Controller\UiExtensionController:
         arguments:

@@ -24,7 +24,11 @@ Code, comments, docs and commit messages are English, like every `dmstr/*` repo.
 
 This is not style. A hardcoded German string works perfectly in the application it was written in and stays invisible until a *second* front end renders the same form — and by then getting it out costs a bundle release. That is exactly what happened before the extraction: every editor carried its wording inline, half of it in `ae`/`ue` transliteration.
 
-A consuming application can pin the rule cheaply by asserting that the served modules contain no non-ASCII **letters** — typography (`—`, `…`, `‹`, `›`, `▾`, `×`) is fine, umlauts and accents are not — plus a short list of the ASCII transliterations. One does, with both directions verified by mutation; the same check belongs here once this repository has a test runner.
+A consuming application can pin the rule cheaply by asserting that the served modules contain no non-ASCII **letters** — typography (`—`, `…`, `‹`, `›`, `▾`, `×`) is fine, umlauts and accents are not — plus a short list of the ASCII transliterations. One does, with both directions verified by mutation; the same check runs here as a guard test (see Tests).
+
+## Libraries
+
+The list of switchable libraries lives in `Library::ALL` and nowhere else; configuration validation, the locator and the tests all read it. Vendored third-party code is written **only** by `bin/fetch-libraries` (recipes in `bin/libraries/`, version pinned with its npm integrity value) and never edited by hand. Third-party code always sits in a `vendor/` subdirectory of its extension, which is what keeps it out of the guard tests. A library's `index.js` never alters a global the host provided.
 
 ## Versioning
 
@@ -34,9 +38,20 @@ The version comes from the **git tag**, never from `composer.json` — there is 
 
 ## Tests
 
-There is no test infrastructure in this repository yet. Until there is, the behaviour is covered downstream: a consuming application asserts the delivery contract (catalogue shape, content type, the route path outside `/api`, realpath containment, the English-only guard) and drives the editors headless in a real browser against a real API.
+```bash
+composer install
+vendor/bin/phpunit
+```
 
-That arrangement is on borrowed time — a bundle whose only tests live in one of its consumers is untested from the moment a second one appears. Anything added here ships with a test the day this repository has a runner; see the open issue.
+There is no PHP on some development hosts; run the suite in a `php:8.5-cli` container with the repository mounted at `/app` instead. The suite needs no database and no browser.
+
+Layout under `tests/`: `Support/TestKernel.php` is the smallest application that can host the bundle (FrameworkBundle plus this bundle) and is configurable per test — enabled libraries, extra `paths`, and a fixture standing in for the bundle's own `jx/`; `Support/KernelTestCase.php` builds browsers against it. `Fixtures/` holds the stand-in extension directories. `Bundle/`, `Controller/` and `Service/` mirror what they test.
+
+Guard tests, which discover what they check instead of listing it so a new module is covered the day it is added: the shipped modules are English only (no non-ASCII letters, no German transliterations) and name no consumer. They glob `jx/*/*.js` and `jx/_shared/*.js` — the modules this repository owns — and leave `vendor/` out by construction, because third-party code is not ours to police.
+
+`Bundle/LibraryExtensionTest.php` runs over the REAL `jx/` directory for every entry of `Library::ALL`: listing and manifest, every relative URL in an `index.js` resolves through the file route with the right content type, every servable file in `vendor/` is served, a disabled library is invisible, and the directories match the list. Use fixtures only for what the real directory cannot show.
+
+**Every new behaviour ships with a test**, and a fix with a test that fails without it.
 
 ## Naming a consumer
 

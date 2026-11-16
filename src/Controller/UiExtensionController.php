@@ -6,6 +6,7 @@ declare(strict_types=1);
 namespace Dmstr\JedisonExtender\Controller;
 
 use Dmstr\JedisonExtender\Service\ExtensionLocator;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -35,11 +36,28 @@ use Symfony\Component\Routing\Attribute\Route;
 final class UiExtensionController
 {
     /**
-     * Only these files are served. The route requirement already excludes a
-     * slash, so `../` cannot travel in the parameter at all — this is the second
-     * belt, not the first.
+     * Served file types and their content types — an allow-list, never a deny
+     * list. Everything else (`json`, `php`, `yaml`, `env`, ...) is a 404, so a
+     * file that lands in an extension directory by accident is not published.
      */
-    private const ALLOWED_EXTENSION = 'js';
+    private const CONTENT_TYPES = [
+        'js' => 'text/javascript; charset=UTF-8',
+        'css' => 'text/css; charset=UTF-8',
+        'png' => 'image/png',
+    ];
+
+    /**
+     * Files above this size are streamed instead of read into memory. Only
+     * vendored libraries get near it; the editors themselves are far smaller.
+     */
+    private const STREAM_THRESHOLD = 1024 * 1024;
+
+    /**
+     * One or more path segments. Each starts with a letter or digit — which
+     * rules out `.`, `..`, hidden files and empty segments — and holds only
+     * letters, digits, `.`, `_` and `-`. There is no leading slash either.
+     */
+    private const FILE_PATTERN = '[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*';
 
     /** @param list<string> $paths */
     public function __construct(
@@ -75,14 +93,18 @@ final class UiExtensionController
     }
 
     /**
-     * A single module file.
+     * A single file of an extension: a module, a stylesheet or an image.
      *
-     * The requirements are the actual traversal defence: `{file}` admits no
-     * slash, so neither `../` nor a decoded `%2e%2e%2f` can reach the file
-     * system. Note this cannot be demonstrated with curl — an HTTP client
+     * The requirements are the first defence: `{file}` admits subdirectories
+     * (vendored libraries live in `vendor/`) but every segment must start with a
+     * letter or digit, so neither `../` nor a decoded `%2e%2e%2f` can reach the
+     * file system. Note this cannot be demonstrated with curl — an HTTP client
      * normalises dot segments before sending (RFC 3986), so such a request never
      * arrives here. The proof belongs in a test that calls the controller with a
-     * prepared parameter.
+     * prepared parameter, which is why the pattern is checked again below.
+     *
+     * The second defence is the locator's realpath comparison, the third the
+     * allow-list of file types.
      *
      * `{name}` admits a leading underscore, and that one character is what makes
      * SHARED modules possible. A module under `/ui-extensions/core/index.js`
@@ -96,14 +118,22 @@ final class UiExtensionController
     #[Route(
         '/ui-extensions/{name}/{file}',
         name: 'dmstr_ui_extensions_module',
-        requirements: ['name' => '_?[a-z0-9][a-z0-9-]*', 'file' => '[A-Za-z0-9][A-Za-z0-9._-]*'],
+        requirements: ['name' => '_?[a-z0-9][a-z0-9-]*', 'file' => self::FILE_PATTERN],
         methods: ['GET'],
         stateless: true,
     )]
     public function module(string $name, string $file, Request $request): Response
     {
-        if (self::ALLOWED_EXTENSION !== pathinfo($file, \PATHINFO_EXTENSION)) {
-            throw new NotFoundHttpException(sprintf('Only .%s files are served.', self::ALLOWED_EXTENSION));
+        $extension = pathinfo($file, \PATHINFO_EXTENSION);
+
+        // `manifest.json` is excluded by its extension already; the basename
+        // check keeps it a 404 should `json` ever join the allow-list.
+        if (
+            !preg_match('#^'.self::FILE_PATTERN.'$#D', $file)
+            || 'manifest.json' === basename($file)
+            || !isset(self::CONTENT_TYPES[$extension])
+        ) {
+            throw new NotFoundHttpException(sprintf('Unknown UI extension file "%s/%s".', $name, $file));
         }
 
         $path = $this->locator->resolve($this->paths, $name, $file);
@@ -112,15 +142,21 @@ final class UiExtensionController
             throw new NotFoundHttpException(sprintf('Unknown UI extension file "%s/%s".', $name, $file));
         }
 
-        $contents = (string) file_get_contents($path);
+        // A module script must be served with its proper type; a wrong one makes
+        // the browser refuse the import.
+        $headers = ['Content-Type' => self::CONTENT_TYPES[$extension]];
+        $size = filesize($path);
 
-        $response = new Response($contents, Response::HTTP_OK, [
-            // A module script must be served as text/javascript; a wrong type
-            // makes the browser refuse the import.
-            'Content-Type' => 'text/javascript; charset=UTF-8',
-        ]);
+        if ('png' === $extension || false === $size || $size > self::STREAM_THRESHOLD) {
+            $response = new BinaryFileResponse($path, Response::HTTP_OK, $headers, false);
+            $response->setEtag((string) md5_file($path));
+        } else {
+            // A plain Response keeps the body readable through getContent().
+            $contents = (string) file_get_contents($path);
+            $response = new Response($contents, Response::HTTP_OK, $headers);
+            $response->setEtag(md5($contents));
+        }
 
-        $response->setEtag(md5($contents));
         $response->isNotModified($request);
 
         return $response;
