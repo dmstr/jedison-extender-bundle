@@ -1,0 +1,9 @@
+{
+    "_comment": "file generated with AI assistance: Claude Code - 2026-11-16 16:10:00 UTC",
+    "name": "ace",
+    "version": "1.0.0",
+    "jedison": "^1.22.1",
+    "module": "index.js",
+    "description": "Code editor for the Jedison string editor enabled by x-format: ace (Ace), with a fixed set of modes and themes served by the bundle.",
+    "libraries": [{"name": "ace-builds", "version": "1.32.9", "license": "BSD-3-Clause"}]
+}
