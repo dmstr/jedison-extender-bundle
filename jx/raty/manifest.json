@@ -1,0 +1,9 @@
+{
+    "_comment": "file generated with AI assistance: Claude Code - 2026-11-16 16:03:41 UTC — Metadata for this extension; see jx/core/manifest.json for why it lives here and not in index.js.",
+    "name": "raty",
+    "version": "1.0.0",
+    "jedison": "^1.22.1",
+    "module": "index.js",
+    "description": "Enables the Jedison star-rating editor for numbers (x-format raty) by providing Raty with its star images.",
+    "libraries": [{"name": "raty-js", "version": "4.3.0", "license": "MIT"}]
+}
