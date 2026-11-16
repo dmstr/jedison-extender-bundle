@@ -59,10 +59,14 @@ final class UiExtensionController
      */
     private const FILE_PATTERN = '[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*';
 
-    /** @param list<string> $paths */
+    /**
+     * @param list<string>                $paths
+     * @param array<string, list<string>> $libraryLocales
+     */
     public function __construct(
         private readonly ExtensionLocator $locator,
         private readonly array $paths,
+        private readonly array $libraryLocales = [],
     ) {
     }
 

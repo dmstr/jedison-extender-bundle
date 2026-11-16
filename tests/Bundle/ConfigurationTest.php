@@ -62,6 +62,73 @@ final class ConfigurationTest extends KernelTestCase
         self::assertSame(['ace'], self::enabled(self::kernel(['ace', 'ace'])));
     }
 
+    public function testNoLocalesAreConfiguredByDefault(): void
+    {
+        self::assertSame([], self::locales(self::kernel(['flatpickr'])));
+        self::assertSame([], self::locales(self::kernel(['flatpickr'], locales: ['flatpickr' => []])));
+    }
+
+    /** @param array<string, list<string>> $expected */
+    #[DataProvider('validLocales')]
+    public function testValidLocalesAreExposedAsParameter(array $configured, array $expected): void
+    {
+        self::assertSame($expected, self::locales(self::kernel(['flatpickr'], locales: $configured)));
+    }
+
+    /** @return iterable<string, array{array<string, list<string>>, array<string, list<string>>}> */
+    public static function validLocales(): iterable
+    {
+        yield 'one' => [['flatpickr' => ['de']], ['flatpickr' => ['de']]];
+        yield 'order kept' => [['flatpickr' => ['de', 'fr']], ['flatpickr' => ['de', 'fr']]];
+        yield 'duplicate once' => [['flatpickr' => ['de', 'de']], ['flatpickr' => ['de']]];
+    }
+
+    /** @param array<string, list<string>> $locales */
+    #[DataProvider('invalidLocales')]
+    public function testInvalidLocalesFailWhenTheConfigurationIsLoaded(array $editors, array $locales, string $message): void
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessageMatches($message);
+
+        self::kernel($editors, locales: $locales);
+    }
+
+    /** @return iterable<string, array{list<string>, array<string, list<string>>, string}> */
+    public static function invalidLocales(): iterable
+    {
+        $fp = ['flatpickr'];
+        yield 'no such file' => [$fp, ['flatpickr' => ['xx']], '/unknown locale "xx"/'];
+        yield 'upper case' => [$fp, ['flatpickr' => ['De']], '/"De" is not a locale name/'];
+        yield 'path traversal' => [$fp, ['flatpickr' => ['../de']], '/"\.\.\/de" is not a locale name/'];
+        yield 'extension' => [$fp, ['flatpickr' => ['de.js']], '/"de\.js" is not a locale name/'];
+        yield 'collection file' => [$fp, ['flatpickr' => ['index']], '/"index" is not a locale/'];
+        yield 'english default' => [$fp, ['flatpickr' => ['default']], '/"default" is not a locale/'];
+        yield 'registers nothing' => [$fp, ['flatpickr' => ['ms']], '/"ms\.js" does not register under its own name/'];
+        yield 'registers sr' => [$fp, ['flatpickr' => ['sr-cyr']], '/"sr-cyr\.js" does not register/'];
+        yield 'registers hr' => [$fp, ['flatpickr' => ['ga']], '/"ga\.js" does not register/'];
+        yield 'registers ar' => [$fp, ['flatpickr' => ['ar-dz']], '/"ar-dz\.js" does not register/'];
+        yield 'registers zh_tw' => [$fp, ['flatpickr' => ['zh-tw']], '/"zh-tw\.js" does not register/'];
+        yield 'library without l10n' => [['imask'], ['imask' => ['de']], '/library "imask" ships no locale files/'];
+        yield 'library not enabled' => [[], ['flatpickr' => ['de']], '/"flatpickr", which is not enabled/'];
+        yield 'unknown library' => [$fp, ['nope' => ['de']], '/unknown library "nope"/'];
+        yield 'dashed key as written' => [['tom-select'], ['tom-select' => ['de']], '/library "tom-select" ships no locale files/'];
+    }
+
+    public function testTwoKernelsWithDifferentLocalesDoNotShareAContainer(): void
+    {
+        $de = self::kernel(['flatpickr'], locales: ['flatpickr' => ['de']]);
+        $fr = self::kernel(['flatpickr'], locales: ['flatpickr' => ['fr']]);
+
+        self::assertSame(['flatpickr' => ['de']], self::locales($de));
+        self::assertSame(['flatpickr' => ['fr']], self::locales($fr));
+    }
+
+    /** @return array<string, list<string>> */
+    private static function locales(KernelInterface $kernel): array
+    {
+        return $kernel->getContainer()->getParameter('dmstr_jedison_extender.library_locales');
+    }
+
     /** @return list<string> */
     private static function enabled(KernelInterface $kernel): array
     {
