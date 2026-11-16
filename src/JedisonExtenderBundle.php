@@ -59,11 +59,16 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
  *             - '%kernel.project_dir%/jx'
  *         core:
  *             editors: [flatpickr, imask]
+ *             locales:
+ *                 flatpickr: [de]
  *
  * `core.editors` switches on the third-party libraries the Jedison plugin
  * editors need (see `Library::ALL`). Each is its own extension under `jx/` and
  * only the enabled ones are listed in the catalogue or served; Awesomplete
- * belongs to `core` itself and is always on.
+ * belongs to `core` itself and is always on. `core.locales` lists, per enabled
+ * library that ships translations (today flatpickr), the locales its module
+ * loads; they travel in the catalogue's `module` URL as `?locales=de,fr`, and
+ * invalid ones fail when the container is built.
  */
 final class JedisonExtenderBundle extends AbstractBundle
 {

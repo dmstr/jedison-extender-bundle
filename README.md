@@ -102,6 +102,19 @@ dmstr_jedison_extender:
 
 The default is **none**: a library that is not enabled is not listed in the catalogue and its files answer 404, so a host never downloads code nobody asked for. Unknown names are rejected when the configuration is loaded, and so is `awesomplete`, which is part of `core` and always on ("Awesomplete is part of core and always enabled"). The valid names are the entries of `Library::ALL` in the table below.
 
+Libraries that ship translations can have locales loaded for them with `core.locales`, a map from library to a list of locales (default: empty):
+
+```yaml
+# config/packages/dmstr_jedison_extender.yaml
+dmstr_jedison_extender:
+    core:
+        editors: [flatpickr]
+        locales:
+            flatpickr: [de]
+```
+
+The configuration is checked when the container is built, and the following is rejected with an `InvalidConfigurationException`: a library name that does not exist (shown as written); a library that ships no locales (today only flatpickr does); locales for a library that is not enabled in `core.editors`; a locale name that does not match `^[a-z][a-z0-9_-]*$`; a locale without a file `vendor/l10n/<locale>.js`; and the names `index` (the collection file) and `default` (English, registers nothing). A locale appears once however often it is listed, the order is kept, and an empty list is the same as no configuration. The catalogue entry of the library then carries the locales in its `module` URL (`/ui-extensions/flatpickr/index.js?locales=de,fr`); without configuration the catalogue is identical to 0.3.0.
+
 | `x-format` | Schema type | Extension | Library (global) | Version | License |
 |---|---|---|---|---|---|
 | `flatpickr` | string | `flatpickr` | flatpickr (`window.flatpickr`) | 4.6.13 | MIT |
@@ -129,7 +142,7 @@ Two things to know:
 
 ### Notes per library
 
-- **flatpickr** is shipped with its locale files under `vendor/l10n/`; none is loaded by default. A host that wants one loads `/ui-extensions/flatpickr/vendor/l10n/<locale>.js` itself, after the extension, and sets `locale` in `x-flatpickr`.
+- **flatpickr** is shipped with its locale files under `vendor/l10n/`; none is loaded by default. The standard way to get one is `core.locales` (see Library extensions above): the extension loads the configured files from `./vendor/l10n/` after the library is in place, skips a locale that is already registered in `flatpickr.l10ns` (so a host's own flatpickr and its locales are left alone) and throws if a file did not register. Set `locale` in `x-flatpickr` as before. Loading `/ui-extensions/flatpickr/vendor/l10n/<locale>.js` yourself, after the extension, stays possible. Not accepted are `ar-dz` (registers `ar`), `ga` (registers `hr` and would overwrite Croatian), `ms` (registers nothing), `sr-cyr` (registers `sr`) and `zh-tw` (registers `zh_tw`), because in 4.6.13 these files do not register under their own name. Locale files are UMD: they read `window.flatpickr` and set a global named after the locale; with an AMD loader on the page (`define.amd`) they register with the loader instead, the same caveat as above. The module reads the locales from its own URL, so a host must import `entry.module` unchanged, with its query; `index.js` and `index.js?locales=de` are two module instances in the browser, which is harmless because loading is idempotent. A host that caches the catalogue sees a changed configuration only after it reloads it.
 - **ace** ships the modes text, json, javascript, html, css, markdown, xml, yaml and sql, and the themes chrome (the default), github, github_dark, monokai and tomorrow. Any other mode or theme answers 404 and Ace falls back to plain text. Workers (syntax checks) are off, because none are shipped.
 - **jodit** is the fat build: languages, icons and plugins are inside two files. The "source" button would fetch Ace and a beautifier from a public CDN by default; when the bundle loads Jodit it switches the source view to a plain textarea (`sourceEditor: 'area'`, `beautifyHTML: false`).
 - **quill** ships the snow theme; the schema has to ask for it with `"x-quill": {"theme": "snow"}`.
@@ -215,3 +228,7 @@ The IRI editor changes of [PR #3](https://github.com/dmstr/jedison-extender-bund
 - When the host passes `resolveLink(iri, schema)`, a **link to the referenced record** sits next to the input. Its `title` and `aria-label` use the label key `openReference`; without the function no link is shown.
 
 `core` also loads Awesomplete itself now, so a host no longer has to provide the `Awesomplete` global for the reference editor. A host that does keep providing it is reused as before.
+
+## Upgrading to 0.3.1
+
+0.3.1 is additive: nothing has to be done unless you want flatpickr locales. Configure them with `core.locales` (see Configuration) and make sure the host imports `entry.module` from the catalogue unchanged, including its query string. Without `core.locales` the catalogue is identical to 0.3.0.
