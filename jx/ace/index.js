@@ -19,18 +19,24 @@
  * A host that ships its own workers and enables them needs a CSP that allows
  * `worker-src blob:`.
  *
+ * HOST GLOBAL: when the host brings its own `ace`, it is used as it is. This
+ * module configures Ace (base path for modes and themes, workers off) only when
+ * it loaded Ace itself, so the host's configuration is never overwritten.
+ *
  * Ace injects its CSS from JavaScript, so no stylesheet is loaded here.
  */
 
 import { ensureGlobal } from '../_shared/load-library.js'
 
-const vendorUrl = new URL('./vendor/', import.meta.url)
+const providedByHost = Boolean(globalThis.ace)
 
-await ensureGlobal('ace', new URL('ace.js', vendorUrl))
+await ensureGlobal('ace', new URL('./vendor/ace.js', import.meta.url))
 
-// Modes and themes are fetched lazily from the bundle by their module id.
-globalThis.ace.config.set('basePath', vendorUrl.href)
-globalThis.ace.config.setDefaultValue('session', 'useWorker', false)
+if (!providedByHost) {
+  // Modes and themes are fetched lazily from the bundle by their module id.
+  globalThis.ace.config.set('basePath', new URL('./vendor/', import.meta.url).href)
+  globalThis.ace.config.setDefaultValue('session', 'useWorker', false)
+}
 
 export default function register () {
   return { editors: [], constraints: {} }
