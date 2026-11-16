@@ -56,6 +56,13 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
  *     dmstr_jedison_extender:
  *         paths:
  *             - '%kernel.project_dir%/jx'
+ *         core:
+ *             editors: [flatpickr, imask]
+ *
+ * `core.editors` switches on the third-party libraries the Jedison plugin
+ * editors need (see `Library::ALL`). Each is its own extension under `jx/` and
+ * only the enabled ones are listed in the catalogue or served; Awesomplete
+ * belongs to `core` itself and is always on.
  */
 final class JedisonExtenderBundle extends AbstractBundle
 {
@@ -68,6 +75,25 @@ final class JedisonExtenderBundle extends AbstractBundle
                 ->arrayNode('paths')
                     ->info('Additional directories holding extensions; each subdirectory with a manifest.json is one extension.')
                     ->scalarPrototype()->end()
+                ->end()
+                ->arrayNode('core')
+                    ->addDefaultsIfNotSet()
+                    ->children()
+                        ->arrayNode('editors')
+                            ->info('Libraries to activate, each delivered as its own extension: '.implode(', ', Library::ALL).'. Awesomplete is part of core and always enabled.')
+                            ->defaultValue([])
+                            ->scalarPrototype()
+                                ->validate()
+                                    ->ifTrue(static fn (mixed $name): bool => 'awesomplete' === $name)
+                                    ->thenInvalid('Awesomplete is part of core and always enabled; it must not be listed.')
+                                ->end()
+                                ->validate()
+                                    ->ifTrue(static fn (mixed $name): bool => !\is_string($name) || !\in_array($name, Library::ALL, true))
+                                    ->thenInvalid('Unknown library %s. Available: '.implode(', ', Library::ALL).'.')
+                                ->end()
+                            ->end()
+                        ->end()
+                    ->end()
                 ->end()
             ->end();
     }
@@ -87,6 +113,10 @@ final class JedisonExtenderBundle extends AbstractBundle
         );
 
         $builder->setParameter('dmstr_jedison_extender.paths', $paths);
+        $builder->setParameter(
+            'dmstr_jedison_extender.enabled_libraries',
+            array_values(array_unique($config['core']['editors'] ?? [])),
+        );
         $container->import(\dirname(__DIR__).'/config/services.yaml');
     }
 }
