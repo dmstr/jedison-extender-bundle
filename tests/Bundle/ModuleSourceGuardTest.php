@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 namespace Dmstr\JedisonExtender\Tests\Bundle;
 
+use Dmstr\JedisonExtender\Library;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -91,6 +92,50 @@ final class ModuleSourceGuardTest extends TestCase
         self::assertContains('core/index.js', $names);
         self::assertContains('_shared/load-library.js', $names);
         self::assertSame([], array_filter($names, static fn (string $name): bool => str_contains($name, 'vendor')));
+    }
+
+    /**
+     * The entry module of every extension is a factory and nothing else: the
+     * host calls its default `register()`, and the catalogue takes name,
+     * version and Jedison range from `manifest.json`. A second copy of those in
+     * the module would drift from the manifest without anyone noticing.
+     */
+    #[DataProvider('entryModules')]
+    public function testEntryModuleExportsADefaultRegisterAndNoManifest(string $path): void
+    {
+        $source = (string) file_get_contents($path);
+        $name = basename(\dirname($path));
+
+        self::assertMatchesRegularExpression(
+            '/export\s+default\s+function\s+register\s*\(/',
+            $source,
+            $name.'/index.js has no default export of register()',
+        );
+        self::assertDoesNotMatchRegularExpression(
+            '/export\s+(const|let|var)\s+(name|version|jedison)\b/',
+            $source,
+            $name.'/index.js exports manifest data - it belongs in manifest.json',
+        );
+    }
+
+    /** The contract test must see every shipped extension, or it passes by checking nothing. */
+    public function testTheEntryModuleProviderFindsEveryShippedExtension(): void
+    {
+        $names = array_keys([...self::entryModules()]);
+        sort($names);
+
+        $expected = ['core', ...Library::ALL];
+        sort($expected);
+
+        self::assertSame($expected, $names);
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function entryModules(): iterable
+    {
+        foreach (glob(__DIR__.'/../../jx/*/manifest.json') ?: [] as $manifest) {
+            yield basename(\dirname($manifest)) => [\dirname($manifest).'/index.js'];
+        }
     }
 
     /** @return iterable<string, array{string}> */

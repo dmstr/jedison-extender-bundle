@@ -22,16 +22,6 @@ final class CoreExtensionTest extends KernelTestCase
         self::assertSame([['name' => 'awesomplete', 'version' => '1.1.7', 'license' => 'MIT']], $manifest['libraries']);
     }
 
-    public function testTheEntryModuleExportsADefaultFactoryAndNoManifest(): void
-    {
-        $client = self::realClient();
-        $client->request('GET', self::INDEX);
-        $source = (string) $client->getResponse()->getContent();
-
-        self::assertMatchesRegularExpression('/export\s+default\s+function\s+register\s*\(/', $source);
-        self::assertDoesNotMatchRegularExpression('/export\s+(const|let|var)\s+(name|version|jedison)\b/', $source);
-    }
-
     public function testTheEntryModuleLoadsAwesomplete(): void
     {
         $client = self::realClient();
